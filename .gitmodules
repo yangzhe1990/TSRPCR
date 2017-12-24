@@ -1,0 +1,3 @@
+[submodule "tushare"]
+	path = tushare
+	url = https://github.com/waditu/tushare
