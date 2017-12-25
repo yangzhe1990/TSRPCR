@@ -13,11 +13,13 @@ class CSI300(object):
         for minute_interval in ["5", "15", "30", "60"]:
             price_data[minute_interval + "min"] = ts.stock.trading.get_hist_data(code = CSI300.CSI300_CODE_IFENG, ktype = minute_interval)
         
-        # Convert data format
+        # Convert data format. No-op because there is no need to convert.
+        """
         # For now just print what we've got.
         for interval in ["day", "5min", "15min", "30min", "60min"]:
             print("Data for %s" % interval)
             print(price_data[interval])
+        """
 
         # Create price data
         self.price_data = PriceData(price_data)
