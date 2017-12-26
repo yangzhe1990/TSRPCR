@@ -1,3 +1,5 @@
+from TradingDateTime import TradingDateTime, trading_date_time
+
 import pandas
 import tushare as ts
 
@@ -5,25 +7,22 @@ import atexit
 import os
 
 class PriceData(object):
-    """description of class"""
+    """For A shares traded in Shanghai / Shenzhen."""
     
-    INTERVALS = ["day", "5min", "15min", "30min", "60min"]
-    IFENG_INTERVAL_MAP = {"day" : "D", "5min" : "5", "15min" : "15", "30min" : "30", "60min" : "60"}
+    DAY = "day"
+    INTERVALS = [DAY, "5min", "15min", "30min", "60min"]
+    IFENG_INTERVAL_MAP = {DAY : "D", "5min" : "5", "15min" : "15", "30min" : "30", "60min" : "60"}
 
-    def __init__(self, code, csv_base_name, today_date, time_of_day):
+    def __init__(self, code, csv_base_name, now = None):
         self.code = code
         self.csv_base_name = csv_base_name
         if (self.csv_base_name is not None):
             self.initiate_from_csv(csv_base_name)
-            if (not self.is_up_to_date(today_date)):
-                self.merge_hist_data()
-            elif (not self.is_today_data_up_to_time(time_of_day)):
-                self.merge_today_data()
+            self.update_hist_data(now)
         else:
             self.initiate_from_ifeng_hist_data()
 
     def initiate(self):
-        self.update_timestamp()
         atexit.register(PriceData.save_csv, self)
 
     """ Initiate from saved csv file but fall back to downloading in case of missing files """
@@ -51,21 +50,25 @@ class PriceData(object):
             price_data[interval] = self.get_ifeng_hist_data_by_interval(interval)
         return price_data
 
-    def update_timestamp(self):
-        """
-        Set the time of last update from loaded data. 
+    """ TODO: this method doesn't work because ifeng_hist_data may not give data of the current trading day! """
+    def update_hist_data(self, now):
+        last_closed_day = trading_date_time.lastClosedDayChina(now)
+        # Check for daily data.
+        if last_closed_day > self.price_data[PriceData.DAY].iloc[0].name:
+            self.merge_ifeng_hist_data(PriceData.DAY)
 
-        self.date_last_update = 
-        self.time_last_update = 
-        """
+        # Check for minutes data.
+        for interval in PriceData.INTERVALS:
+            if (interval.endswith("min")):
+                interval_min = int(interval[:-3])
+                last_interval_close = trading_date_time.lastClosedMinuteIntervalTimeChina(interval_min, now)
+                if (last_interval_close.strftime(TradingDateTime.DATETIME_STRFTIME) > self.price_data[interval].iloc[0].name):
+                    self.merge_ifeng_hist_data(interval)
 
-    def is_up_to_date(self, today_date):
-        # TODO: do real things
-        return True
-
-    def is_today_data_up_to_time(self, time_of_day):
-        # TODO: do real things
-        return True
+    def merge_ifeng_hist_data(self, interval):
+        print("Update data for %s" % interval)
+        data = self.get_ifeng_hist_data_by_interval(interval)
+        self.price_data[interval] = pandas.merge(data.reset_index(), self.price_data[interval].reset_index(), how = "outer").set_index("date")
 
     def save_csv(self):
         for interval in PriceData.INTERVALS:
