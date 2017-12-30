@@ -1,7 +1,7 @@
 from TradingDateTime import TradingDateTime, trading_date_time
+from PriceDataLoader import price_data_loader_china
 
 import pandas
-import tushare as ts
 
 import atexit
 import datetime
@@ -54,11 +54,11 @@ class PriceData(object):
 
     """ DEPRECATED: Download from ifeng. ifeng_hist_data may not give data of the current trading day! """
     def get_ifeng_hist_data_by_interval(self, interval):
-        return ts.stock.trading.get_hist_data(code = self.code, ktype = PriceData.INTERVAL_TO_REQUEST_MAP[interval])
+        return price_data_loader_china.get().get_hist_data(code = self.code, ktype = PriceData.INTERVAL_TO_REQUEST_MAP[interval])
 
     """ WARNING: tencent data sometimes contain gaps, make sure to discard data before gap when calculating indicators such as moving average. """
     def get_tencent_hist_data_by_interval(self, interval):
-        data = ts.stock.trading.get_k_data(code = self.code, ktype = PriceData.INTERVAL_TO_REQUEST_MAP[interval])
+        data = price_data_loader_china.get().get_k_data(code = self.code, ktype = PriceData.INTERVAL_TO_REQUEST_MAP[interval])
 
         if interval.endswith("min"):
             # Fix date format for minute intervals.
@@ -119,7 +119,7 @@ class PriceData(object):
         if not trading_date_time.isRealtimeDataAvailableChina(fakeNow):
             print("Not requesting realtime data because trade has closed.")
             return
-        data = ts.get_realtime_quotes(self.code).iloc[0]
+        data = price_data_loader_china.get().get_realtime_quotes(self.code).iloc[0]
         print(data)
         price = float(data["price"])
         time_str = "%s %s" % (data["date"], data["time"])
@@ -161,11 +161,11 @@ class PriceData(object):
         return price_data.iloc[len(price_data.index) - 1]
 
     def __save_data_frame_to_csv(self, df, csv_path):
-        df.to_csv(csv_path)
+        price_data_loader_china.get().save_csv(df, csv_path)
 
     def __load_data_frame_from_csv(self, csv_path):
         if os.path.exists(csv_path):
-            return pandas.read_csv(csv_path, index_col = 0)
+            return price_data_loader_china.get().read_csv(csv_path, index_col = 0)
         else:
             print("File not found: %s. Will do fresh download instead." % csv_path)
             return None

@@ -1,8 +1,9 @@
 import tushare as ts
 
+from PriceDataLoader import price_data_loader_china
+
 import bisect
 import datetime
-import pytz
 
 class TradingDateTime(object):
     """Provide local date time information of China stock exchange."""
@@ -159,7 +160,7 @@ class TradingDateTime(object):
             return "%s %s:%s:00" % (day, close_hour, close_minute)
 
     def nowChina(self):
-        return datetime.datetime.now(pytz.timezone('Asia/Shanghai'))
+        return price_data_loader_china.get().now()
 
     """ Date format is YYYY-MM-DD """
     def todayStringChina(self):
