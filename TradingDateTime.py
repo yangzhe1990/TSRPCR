@@ -29,7 +29,7 @@ class TradingDateTime(object):
         index = bisect.bisect_left(self.getChinaTradingDates(), day)
         return day == self.getChinaTradingDates()[index]
 
-    """ Whether realtime data is available at given time on a trading day. If so, today is not fully closed """
+    """ Whether realtime data is available at given time on a trading day. If so, today is not fully closed. """
     def isRealtimeDataAvailableChina(self, nowChina = None):
         if nowChina is None:
             nowChina = self.nowChina()
@@ -94,14 +94,14 @@ class TradingDateTime(object):
             return None
         hour, minute, second = (nowChina.hour, nowChina.minute, nowChina.second)
         # Check if now is in the morning
-        is_morning = (hour, minute, second) <= TradingDateTime.CHINA_AFTERNOON_OPEN
+        is_morning = (hour, minute, second) < TradingDateTime.CHINA_AFTERNOON_OPEN
         if is_morning:
-            second_since_opening = TradingDateTime.CHINA_MORNING_OPEN[0] * 3600 + TradingDateTime.CHINA_MORNING_OPEN[1] * 60 + TradingDateTime.CHINA_MORNING_OPEN[2]
+            second_of_opening = TradingDateTime.CHINA_MORNING_OPEN[0] * 3600 + TradingDateTime.CHINA_MORNING_OPEN[1] * 60 + TradingDateTime.CHINA_MORNING_OPEN[2]
         else:
-            second_since_opening = TradingDateTime.CHINA_AFTERNOON_OPEN[0] * 3600 + TradingDateTime.CHINA_AFTERNOON_OPEN[1] * 60 + TradingDateTime.CHINA_AFTERNOON_OPEN[2]
-        elapsed_second = hour * 3600 + minute * 60 + second - second_since_opening
+            second_of_opening = TradingDateTime.CHINA_AFTERNOON_OPEN[0] * 3600 + TradingDateTime.CHINA_AFTERNOON_OPEN[1] * 60 + TradingDateTime.CHINA_AFTERNOON_OPEN[2]
+        elapsed_second = hour * 3600 + minute * 60 + second - second_of_opening
 
-        close_minute = ((elapsed_second - 1) // (minute_interval * 60) + 1) * minute_interval + second_since_opening // 60
+        close_minute = ((elapsed_second - 1) // (minute_interval * 60) + 1) * minute_interval + second_of_opening // 60
         close_hour = close_minute // 60
         close_minute = close_minute % 60
         if is_morning:

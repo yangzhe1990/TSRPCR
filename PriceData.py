@@ -17,6 +17,9 @@ class PriceData(object):
     def __init__(self, code, csv_base_name, now = None):
         self.code = code
         self.csv_base_name = csv_base_name
+        # Realtime price data.
+        self.realtime_price_data = {}
+
         if (self.csv_base_name is not None):
             self.initiate_from_csv(csv_base_name)
             self.update_hist_data(now)
@@ -106,12 +109,50 @@ class PriceData(object):
         for interval in PriceData.INTERVALS:
             self.__save_data_frame_to_csv(self.price_data[interval], "%s_%s.csv" % (self.csv_base_name, interval))
     
+    def update_realtime(self, fakeNow = None):
+        if not trading_date_time.isRealtimeDataAvailableChina(fakeNow):
+            print("Not requesting realtime data because trade has closed.")
+            return
+        data = ts.get_realtime_quotes(self.code).iloc[0]
+        print(data)
+        price = float(data["price"])
+        time_str = "%s %s" % (data["date"], data["time"])
+        for interval in PriceData.INTERVALS:
+            self.__update_realtime_at_interval(interval, price, time_str)
+
     def setSimpleMovingAverage(self, sma):
         self.sma = sma
         sma.loadPriceData(self.price_data)
 
     def appendPriceData(self, price_tick):
         self.sma.appendPriceData(price_tick)
+
+    def __update_realtime_at_interval(self, interval, price, time_str):
+        # Compute the close time of the current interval.
+        time = datetime.datetime.strptime(time_str, TradingDateTime.DATETIME_STRFTIME)
+        if interval == PriceData.DAY:
+            this_close = time_str.split(' ')[0]
+        else:
+            this_close = trading_date_time.closeTimeOfCurrentMinuteIntervalChina(
+                int(interval[:-3]), time, check_opening = False).strftime(TradingDateTime.DATETIME_STRFTIME)
+
+        # Obtain interval data. Create if it doesn't exist.
+        interval_data = self.realtime_price_data.get(interval, None)
+        if interval_data is None:
+            interval_data = self.realtime_price_data[interval] = {"this_close": this_close}
+
+        # Interval data exists but has shifted. In this case we would like to replace the existing one.
+        if interval_data.get("this_close") != this_close:
+            new_interval_data = {
+                "prev_close_price": interval_data["last_price"],
+                "prev_close": interval_data["this_close"],
+                "this_close": this_close,
+                }
+            interval_data = self.realtime_price_data[interval] = new_interval_data
+
+        # Update interval data.
+        interval_data["last_price"] = price
+        interval_data["last_time"] = time_str
         
     def __save_data_frame_to_csv(self, df, csv_path):
         df.to_csv(csv_path)
