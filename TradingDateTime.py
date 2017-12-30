@@ -69,8 +69,8 @@ class TradingDateTime(object):
             hm = (nowChina.hour, nowChina.minute, 0)
             if hm >= TradingDateTime.CHINA_AFTERNOON_CLOSE:
                 (hour, minute, _) = TradingDateTime.CHINA_AFTERNOON_CLOSE
-            # Check if now is in afternoon trading.
-            elif hm >= TradingDateTime.CHINA_AFTERNOON_OPEN:
+            # Check if now is past the first interval in afternoon trading.
+            elif nowChina.hour * 60 + nowChina.minute >= TradingDateTime.CHINA_AFTERNOON_OPEN[0] * 60 + TradingDateTime.CHINA_AFTERNOON_OPEN[1] + minute_interval:
                 elapsed_minute = (nowChina.hour - TradingDateTime.CHINA_AFTERNOON_OPEN[0]) * 60 + nowChina.minute - TradingDateTime.CHINA_AFTERNOON_OPEN[1]
                 elapsed_minute = elapsed_minute % minute_interval
                 minute = nowChina.hour * 60 + nowChina.minute - elapsed_minute
@@ -100,7 +100,11 @@ class TradingDateTime(object):
         else:
             second_of_opening = TradingDateTime.CHINA_AFTERNOON_OPEN[0] * 3600 + TradingDateTime.CHINA_AFTERNOON_OPEN[1] * 60 + TradingDateTime.CHINA_AFTERNOON_OPEN[2]
         elapsed_second = hour * 3600 + minute * 60 + second - second_of_opening
+        # If time is before opening, set the time to 1s after opening so that the math in the section below works.
+        if elapsed_second <= 0:
+            elapsed_second = 1
 
+        # Round up because the last interval may not be full (e.g. 60min interval can not be full if total trading hour is 3h30min).
         close_minute = ((elapsed_second - 1) // (minute_interval * 60) + 1) * minute_interval + second_of_opening // 60
         close_hour = close_minute // 60
         close_minute = close_minute % 60
@@ -117,6 +121,42 @@ class TradingDateTime(object):
     def previousTradingDayChina(self, day):
         index = bisect.bisect_left(self.getChinaTradingDates(), day)
         return "0000-01-01" if index == 0 else self.getChinaTradingDates()[index - 1]
+
+    """ Given a datetime string and an interval, return the close datetime string of the previous interval. """
+    def previousIntervalClose(self, interval, datetime_str):
+        # Import here to break circular dependency.
+        from PriceData import PriceData
+        if interval == PriceData.DAY:
+            return self.previousTradingDayChina(datetime_str)
+        else:
+            minute_interval = int(interval[:-3])
+            nowChina = datetime.datetime.strptime(datetime_str, TradingDateTime.DATETIME_STRFTIME)
+            day = nowChina.strftime(TradingDateTime.DAY_STRFTIME)
+            hour, minute, second = (nowChina.hour, nowChina.minute, nowChina.second)
+            # Check if now is in the morning
+            is_morning = (hour, minute, second) < TradingDateTime.CHINA_AFTERNOON_OPEN
+            if is_morning:
+                second_of_opening = TradingDateTime.CHINA_MORNING_OPEN[0] * 3600 + TradingDateTime.CHINA_MORNING_OPEN[1] * 60 + TradingDateTime.CHINA_MORNING_OPEN[2]
+            else:
+                second_of_opening = TradingDateTime.CHINA_AFTERNOON_OPEN[0] * 3600 + TradingDateTime.CHINA_AFTERNOON_OPEN[1] * 60 + TradingDateTime.CHINA_AFTERNOON_OPEN[2]
+            elapsed_second = hour * 3600 + minute * 60 + second - second_of_opening
+
+            close_minute = ((elapsed_second - 1) // (minute_interval * 60)) * minute_interval + second_of_opening // 60
+            close_hour = close_minute // 60
+            close_minute = close_minute % 60
+            if is_morning:
+                if (close_hour, close_minute, 0) == TradingDateTime.CHINA_MORNING_OPEN:
+                    close_hour, close_minute, _ = TradingDateTime.CHINA_AFTERNOON_CLOSE
+                    day = self.previousTradingDayChina(day)
+                elif (close_hour, close_minute, 0) > TradingDateTime.CHINA_MORNING_CLOSE:
+                    close_hour, close_minute, _ = TradingDateTime.CHINA_MORNING_CLOSE
+            else:
+                if (close_hour, close_minute, 0) == TradingDateTime.CHINA_AFTERNOON_OPEN:
+                    close_hour, close_minute, _ = TradingDateTime.CHINA_MORNING_CLOSE
+                elif (close_hour, close_minute, 0) > TradingDateTime.CHINA_AFTERNOON_CLOSE:
+                    close_hour, close_minute, _ = TradingDateTime.CHINA_AFTERNOON_CLOSE
+
+            return "%s %s:%s:00" % (day, close_hour, close_minute)
 
     def nowChina(self):
         return datetime.datetime.now(pytz.timezone('Asia/Shanghai'))

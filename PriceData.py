@@ -17,6 +17,8 @@ class PriceData(object):
     def __init__(self, code, csv_base_name, now = None):
         self.code = code
         self.csv_base_name = csv_base_name
+        # Simple moving average.
+        self.sma = None
         # Realtime price data.
         self.realtime_price_data = {}
 
@@ -54,7 +56,7 @@ class PriceData(object):
     def get_ifeng_hist_data_by_interval(self, interval):
         return ts.stock.trading.get_hist_data(code = self.code, ktype = PriceData.INTERVAL_TO_REQUEST_MAP[interval])
 
-    """ TODO: WARNING: tencent data sometimes contain gaps, try to discard data before gap when calculating indicators such as moving average. """
+    """ WARNING: tencent data sometimes contain gaps, make sure to discard data before gap when calculating indicators such as moving average. """
     def get_tencent_hist_data_by_interval(self, interval):
         data = ts.stock.trading.get_k_data(code = self.code, ktype = PriceData.INTERVAL_TO_REQUEST_MAP[interval])
 
@@ -70,22 +72,22 @@ class PriceData(object):
             if last_datetime != close_datetime:
                 print(last_datetime, close_datetime)
                 data.drop(i, inplace = True)
-        data = data.set_index("date").sort_index(ascending=False)
+        data = data.set_index("date").sort_index()
         return data
 
     def merge_tencent_hist_data(self, interval):
         data = self.get_hist_data_by_interval(interval)
-        merged = pandas.merge(data.reset_index(), self.price_data[interval].reset_index(), how = "outer").set_index("date")
+        merged = pandas.merge(self.price_data[interval].reset_index(), data.reset_index(), how = "outer").set_index("date")
         # Dedup because data record from long ago in two responses sometimes are different.
         # This is one issue of Tencent data source. One record must be wrong and we take the newest value.
-        deduped = merged[~merged.index.duplicated(keep = "first")]
-        # Tencent data can contain gap within data records so we must sort after merging.
-        self.price_data[interval] = deduped.sort_index(ascending=False)
+        deduped = merged[~merged.index.duplicated(keep = "last")]
+        # Tencent data may can contain gap within data records so we must sort after merging.
+        self.price_data[interval] = deduped.sort_index()
 
     def update_hist_data(self, now):
         last_closed_day = trading_date_time.lastClosedDayChina(now)
         # Check for daily data.
-        if last_closed_day > self.price_data[PriceData.DAY].iloc[0].name:
+        if last_closed_day > self.__get_last_datetime(PriceData.DAY):
             self.merge_hist_data(PriceData.DAY)
 
         # Check for minutes data.
@@ -93,17 +95,21 @@ class PriceData(object):
             if (interval.endswith("min")):
                 interval_min = int(interval[:-3])
                 last_interval_close = trading_date_time.lastClosedMinuteIntervalTimeChina(interval_min, now)
-                if (last_interval_close.strftime(TradingDateTime.DATETIME_STRFTIME) > self.price_data[interval].iloc[0].name):
+                if (last_interval_close.strftime(TradingDateTime.DATETIME_STRFTIME) > self.__get_last_datetime(interval)):
                     self.merge_hist_data(interval)
 
     def get_hist_data_by_interval(self, interval):
         data = self.get_tencent_hist_data_by_interval(interval)
-        print(data.iloc[0])
+        print("last price record:\n%s" % self.get_last_price_record(data))
         return data
 
     def merge_hist_data(self, interval):
         print("Update data for %s" % interval)
+        # Get the last datetime string of the data before update
+        last_datetime_str = self.get_last_price_record(self.price_data[interval]).name
         self.merge_tencent_hist_data(interval)
+        if self.sma is not None:
+            self.sma.append_price_records(interval, last_datetime_str, self.price_data[interval])
 
     def save_csv(self):
         for interval in PriceData.INTERVALS:
@@ -120,12 +126,9 @@ class PriceData(object):
         for interval in PriceData.INTERVALS:
             self.__update_realtime_at_interval(interval, price, time_str)
 
-    def setSimpleMovingAverage(self, sma):
+    def set_simple_moving_average(self, sma):
         self.sma = sma
-        sma.loadPriceData(self.price_data)
-
-    def appendPriceData(self, price_tick):
-        self.sma.appendPriceData(price_tick)
+        sma.load_price_data(self.price_data)
 
     def __update_realtime_at_interval(self, interval, price, time_str):
         # Compute the close time of the current interval.
@@ -153,7 +156,10 @@ class PriceData(object):
         # Update interval data.
         interval_data["last_price"] = price
         interval_data["last_time"] = time_str
-        
+
+    def get_last_price_record(self, price_data):
+        return price_data.iloc[len(price_data.index) - 1]
+
     def __save_data_frame_to_csv(self, df, csv_path):
         df.to_csv(csv_path)
 
@@ -163,3 +169,6 @@ class PriceData(object):
         else:
             print("File not found: %s. Will do fresh download instead." % csv_path)
             return None
+
+    def __get_last_datetime(self, interval):
+        return self.get_last_price_record(self.price_data[interval]).name
