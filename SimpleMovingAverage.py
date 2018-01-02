@@ -123,3 +123,66 @@ class SimpleMovingAverage(object):
                 if (interval_def[0] == interval):
                     count = interval_def[1]
                     self.sma[ma][index] = (interval_def, self.calculate_moving_average(interval, count, price_data, sma_series, last_datetime_str))
+
+    """
+    Compute the moving average of count for price records in interval, with given realtime_price_data, at time_to_predict.
+    The realtime data gives price at current time, which could be approximately used as close price of current interval.
+    In case if price record of the last closed interval is missing from price_data, the realtime data may contain an approximate
+    close price for previous interval.
+
+    With time_to_predict unset, this function calculate the sma at the current interval of current time. With time_to_predict is
+    set to a time in future, sma is calculated assuming that the price remains at the realtime price unless specified in future_price.
+    """
+    def calculate_realtime_moving_average(self, interval, count, price_data, sma_series, realtime_price_data,
+            time_to_predict = None, future_price = None):
+        sum = 0.0
+        if time_to_predict is None:
+            # Use incremental calculation by default unless there is no enough data.
+            index = len(price_data.index) - 1
+            last_datetime_str = price_data.index[index]
+            update_count = 0
+            datetime_str = realtime_price_data["this_close"]
+            while datetime_str != last_datetime_str:
+                datetime_str = trading_date_time.previousIntervalClose(interval, datetime_str)
+                update_count += 1
+            sum = 0.0
+            if update_count > 0:
+                sum += realtime_price_data["last_price"]
+            prev_close_price = realtime_price_data.get("prev_close_price", None)
+            if update_count > 1 and prev_close_price is None or update_count > 2:
+                print("Missing data between %s and %s in interval %s." % (last_datetime_str, realtime_price_data["this_close"], interval))
+                raise Exception()
+            if update_count > 1:
+                sum += prev_close_price
+                # If we want to estimate missing data.
+                sum += (update_count - 2) * price_data.iloc[index]["close"]
+            if len(sma_series) > 0:
+                sum += sma_series[-1][1] * count
+                for i in range(update_count):
+                    sum -= price_data.iloc[index - count + i + 1]["close"]
+            elif update_count + index + 1 >= count:
+                for i in range(count - update_count):
+                    sum += price_data.iloc[index - i]["close"]
+            else:
+                # No enough price records.
+                return None
+        else:
+            print("Unsupported")
+            raise Exception()
+        return sum / count
+
+    def print_realtime_sma_summary(self, price_data, realtime_price_data):
+        for ma in self.params.keys():
+            print("Realtime MA for %s days:" % ma)
+            for index in range(len(self.sma[ma])):
+                interval_def, sma_series = self.sma[ma][index]
+                interval, count = interval_def
+                # Realtime price data may not be available when trading is already closed.
+                if interval not in realtime_price_data:
+                    continue
+                realtime_ma = self.calculate_realtime_moving_average(interval, count, price_data[interval].copy(), sma_series, realtime_price_data[interval])
+                if realtime_ma is None:
+                    realtime_ma_str = "None\t"
+                else:
+                    realtime_ma_str = "%.3f" % realtime_ma
+                print("\t%s\tat interval %s,\t%s" % (realtime_ma_str, interval, count))

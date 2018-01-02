@@ -130,6 +130,19 @@ class PriceData(object):
         self.sma = sma
         sma.load_price_data(self.price_data)
 
+    """ Print a summary of last price data including history data and realtime data at each interval. """
+    def print_realtime_price_summary(self):
+        for interval in PriceData.INTERVALS:
+            print("Last price record of interval %s: %s" % (interval, self.get_last_price_record(self.price_data[interval])))
+            # Realtime price data may not be available when trading is already closed.
+            if interval in self.realtime_price_data:
+                print("Realtime data at %s: %s" % (interval, self.realtime_price_data[interval]))
+
+    """ Print a summary of realtime sma information. """
+    def print_realtime_sma_summary(self):
+        if self.sma is not None:
+            self.sma.print_realtime_sma_summary(self.price_data, self.realtime_price_data)
+
     def __update_realtime_at_interval(self, interval, price, time_str):
         # Compute the close time of the current interval.
         time = datetime.datetime.strptime(time_str, TradingDateTime.DATETIME_STRFTIME)
